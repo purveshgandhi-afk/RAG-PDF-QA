@@ -1,109 +1,304 @@
-
+import re
+import uuid
+import html
 import streamlit as st
-import tempfile
-from backend import setup_qa_system
+from langchain_core.messages import HumanMessage, AIMessage
 
-st.set_page_config(page_title="RAG QA System", layout="centered")
-CARD_STYLE = """
+from backend import setup_qa_system, clear_session_index, clear_old_indices
+
+# -- Config --------------------------------------------------------------------
+MAX_FILE_SIZE_MB = 50
+
+st.set_page_config(
+    page_title="PDF Q&A with Gemini",
+    page_icon="📄",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# -- Styles --------------------------------------------------------------------
+st.markdown("""
 <style>
-.rag-card {
-  max-width: 900px;
-  margin: 30px auto;
-  border-radius: 16px;
-  padding: 24px;
-  background: linear-gradient(135deg, #e6f7ff 0%, #e8f9ee 100%);
-  box-shadow: 0 6px 18px rgba(28, 57, 84, 0.08);
-  font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+    border-right: 1px solid rgba(255,255,255,0.06);
 }
-.header-title {
-  text-align: center;
-  margin-bottom: 6px;
-  color: #0b6b3a;
+section[data-testid="stSidebar"] * { color: #e2e8f0 !important; }
+section[data-testid="stSidebar"] .stButton button {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    color: #e2e8f0 !important;
+    transition: all 0.2s;
+    width: 100%;
+    margin-bottom: 6px;
 }
-.header-sub {
-  text-align: center;
-  margin-top: 0;
-  margin-bottom: 18px;
-  color: #0f5fa8;
+section[data-testid="stSidebar"] .stButton button:hover {
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.2);
 }
-.uploader {
-  border-radius: 12px;
-  padding: 10px;
-  background: rgba(255,255,255,0.6);
+
+.main .block-container { padding-top: 1.5rem; max-width: 900px; }
+.stChatMessage { border-radius: 12px; margin-bottom: 0.5rem; }
+
+.source-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-left: 3px solid #6366f1;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 6px 0;
+    font-size: 0.85rem;
+    color: #475569;
+    line-height: 1.5;
 }
-.question-area {
-  margin-top: 12px;
+.source-card .page-badge {
+    display: inline-block;
+    background: #6366f1;
+    color: white !important;
+    border-radius: 4px;
+    padding: 1px 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 6px;
 }
-.answer-box {
-  margin-top: 12px;
-  background: #ffffff;
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(0,0,0,0.06);
+
+.app-header { text-align: center; padding: 1.2rem 0 0.5rem; }
+.app-header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6, #06b6d4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 0.25rem;
 }
-.center-note {
-  text-align:center;
-  font-size: 13px;
-  color: #235d3b;
-  margin-top: 8px;
-}
+.app-header p { color: #64748b; font-size: 0.95rem; margin: 0; }
 </style>
-"""
+""", unsafe_allow_html=True)
 
-st.markdown(CARD_STYLE, unsafe_allow_html=True)
 
-col1, col2, col3 = st.columns([1, 3, 1])
+# -- Helpers -------------------------------------------------------------------
 
-with col2:
-    st.markdown("<div class='rag-card'>", unsafe_allow_html=True)
-    st.markdown("<h2 class='header-title'>RAG-based PDF QA System</h2>", unsafe_allow_html=True)
-    st.markdown("<p class='header-sub'>Upload a PDF and ask questions about its contents</p>", unsafe_allow_html=True)
+def sanitize_filename(filename: str) -> str:
+    filename = filename.replace("\\", "").replace("/", "")
+    return re.sub(r"[^a-zA-Z0-9._-]", "_", filename)
 
-    uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"], key="uploader")
 
-    if "qa_chain" not in st.session_state:
-        st.session_state.qa_chain = None
-        st.session_state.pdf_path = None
+def validate_pdf(uploaded_file) -> tuple:
+    """Returns (is_valid, error_message)."""
+    if not uploaded_file.name.lower().endswith(".pdf"):
+        return False, "Only PDF files are allowed."
+    file_bytes = uploaded_file.getvalue()
+    size_mb = len(file_bytes) / (1024 * 1024)
+    if size_mb > MAX_FILE_SIZE_MB:
+        return False, f"File too large ({size_mb:.1f} MB). Max: {MAX_FILE_SIZE_MB} MB."
+    if not file_bytes.startswith(b"%PDF"):
+        return False, "Invalid PDF: magic bytes check failed."
+    return True, ""
 
-    if uploaded_file is not None:
-        # save uploaded file to a temp file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            tmp.write(uploaded_file.read())
-            tmp.flush()
-            temp_pdf_path = tmp.name
 
-        if st.session_state.pdf_path != temp_pdf_path or st.session_state.qa_chain is None:
-            with st.spinner("Processing PDF and building index (may take a moment)..."):
-                try:
-                    qa_chain = setup_qa_system(temp_pdf_path)
-                    st.session_state.qa_chain = qa_chain
-                    st.session_state.pdf_path = temp_pdf_path
-                    st.success("PDF processed successfully. You can now ask questions.")
-                except Exception as e:
-                    st.session_state.qa_chain = None
-                    st.error(f"Error processing PDF: {e}")
+def format_sources(source_docs: list) -> list:
+    seen = set()
+    sources = []
+    for doc in source_docs:
+        page = doc.metadata.get("page", None)
+        page_num = (page + 1) if page is not None else "?"
+        key = (page_num, doc.page_content[:80])
+        if key not in seen:
+            seen.add(key)
+            sources.append({
+                "page": page_num,
+                "excerpt": doc.page_content.strip()[:300],
+            })
+    return sorted(sources, key=lambda x: (x["page"] if isinstance(x["page"], int) else 999))
 
-    else:
-        st.info("Please upload a PDF to begin.")
 
-    st.markdown("<div class='question-area'>", unsafe_allow_html=True)
-    question = st.text_input("Enter your question here:", key="question_input")
-    ask_btn = st.button("Ask", key="ask_btn")
-    st.markdown("</div>", unsafe_allow_html=True)
+# -- Session state init --------------------------------------------------------
+defaults = {
+    "qa_chain": None,
+    "current_pdf_name": None,   # track by name only -- no file path needed
+    "session_id": str(uuid.uuid4()),
+    "messages": [],             # display history: [{role, content, sources}]
+    "chat_history": [],         # LangChain memory: [HumanMessage, AIMessage, ...]
+    "chunk_count": 0,
+}
+for key, val in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = val
 
-    # Show answer if asked
-    if ask_btn:
-        if not st.session_state.get("qa_chain"):
-            st.warning("No PDF processed yet. Upload a PDF first.")
-        elif not question or question.strip() == "":
-            st.warning("Please enter a question.")
+
+# -- Sidebar -------------------------------------------------------------------
+with st.sidebar:
+    st.markdown("### 📄 PDF Q&A with Gemini")
+    st.markdown("---")
+
+    uploaded_file = st.file_uploader(
+        "Upload a PDF",
+        type=["pdf"],
+        help="Max 50 MB. Text-based PDFs only.",
+    )
+
+    if uploaded_file:
+        is_valid, err = validate_pdf(uploaded_file)
+        if not is_valid:
+            st.error(f"❌ {err}")
         else:
-            with st.spinner("Fetching answer..."):
-                try:
-                    answer = st.session_state.qa_chain.run(question)
-                except Exception as e:
-                    answer = f"Error obtaining answer: {e}"
-            st.markdown(f"<div class='answer-box'><strong>Answer:</strong><div style='margin-top:6px'>{answer}</div></div>", unsafe_allow_html=True)
+            safe_name = sanitize_filename(uploaded_file.name)
 
-    st.markdown("<div class='center-note'>Minimal UI — upload PDF on the left and ask questions here.</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+            # Only reprocess if it is a different file than what is already loaded
+            if st.session_state.current_pdf_name != safe_name:
+                with st.spinner("Indexing PDF... (first run downloads embedding model ~90 MB)"):
+                    try:
+                        chain, chunk_count = setup_qa_system(
+                            pdf_bytes=uploaded_file.getvalue(),
+                            session_id=st.session_state.session_id,
+                        )
+                        st.session_state.qa_chain = chain
+                        st.session_state.current_pdf_name = safe_name
+                        st.session_state.chunk_count = chunk_count
+                        # Clear chat when a new PDF is loaded
+                        st.session_state.messages = []
+                        st.session_state.chat_history = []
+                        st.success(f"✅ Ready! Indexed {chunk_count} chunks.")
+                    except FileNotFoundError as e:
+                        st.error(f"❌ File error: {e}")
+                    except ValueError as e:
+                        st.error(f"❌ PDF error: {e}")
+                    except RuntimeError as e:
+                        st.error(f"❌ Config error: {e}")
+                    except Exception as e:
+                        st.error(f"❌ Unexpected error: {e}")
+            else:
+                st.info(f"ℹ️ {safe_name} is already loaded.")
+
+    # Current document status
+    if st.session_state.current_pdf_name:
+        st.markdown("**Current document:**")
+        st.markdown(
+            f"<div style='background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.2);"
+            f"border-radius:8px;padding:10px 14px;font-size:0.82rem;color:#4338ca;word-break:break-all;'>"
+            f"📄 {html.escape(st.session_state.current_pdf_name)}<br>"
+            f"<span style='opacity:0.7'>{st.session_state.chunk_count} chunks indexed</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("")
+
+    # Session controls
+    st.markdown("**Session controls:**")
+
+    if st.button("🔄 Clear Chat History"):
+        st.session_state.messages = []
+        st.session_state.chat_history = []
+        st.rerun()
+
+    if st.button("📂 Load New PDF"):
+        st.session_state.qa_chain = None
+        st.session_state.current_pdf_name = None
+        st.session_state.messages = []
+        st.session_state.chat_history = []
+        st.session_state.chunk_count = 0
+        st.rerun()
+
+    st.markdown("---")
+    st.markdown(
+        "<div style='font-size:0.75rem;color:#94a3b8;text-align:center'>"
+        "Embeddings: local all-MiniLM-L6-v2<br>LLM: Gemini 2.5 Pro"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# -- Main chat area ------------------------------------------------------------
+st.markdown("""
+<div class="app-header">
+    <h1>📄 PDF Question Answering</h1>
+    <p>Upload a PDF in the sidebar, then ask anything about its content.</p>
+</div>
+""", unsafe_allow_html=True)
+
+if not st.session_state.qa_chain:
+    st.markdown("<br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("""
+        <div style="text-align:center;padding:3rem 2rem;background:#f8fafc;
+        border:2px dashed #cbd5e1;border-radius:16px;color:#94a3b8;">
+            <div style="font-size:3rem;margin-bottom:1rem">📤</div>
+            <div style="font-size:1.1rem;font-weight:600;color:#64748b;margin-bottom:0.5rem">
+                No PDF loaded yet
+            </div>
+            <div style="font-size:0.9rem">
+                Upload a PDF using the sidebar to get started.<br>
+                Supports text-based PDFs up to 50 MB.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+else:
+    # Chat history display
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"], avatar="🧑" if msg["role"] == "user" else "🤖"):
+            st.markdown(msg["content"])
+            if msg["role"] == "assistant" and msg.get("sources"):
+                with st.expander(f"📚 Sources ({len(msg['sources'])} passages)", expanded=False):
+                    for src in msg["sources"]:
+                        page_label = f"Page {src['page']}" if isinstance(src["page"], int) else "Unknown page"
+                        st.markdown(
+                            f'<div class="source-card">'
+                            f'<div class="page-badge">{page_label}</div><br>'
+                            f'{html.escape(src["excerpt"])}'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+
+    # Chat input
+    if prompt := st.chat_input("Ask a question about the PDF..."):
+        with st.chat_message("user", avatar="🧑"):
+            st.markdown(prompt)
+        st.session_state.messages.append({"role": "user", "content": prompt, "sources": []})
+
+        with st.chat_message("assistant", avatar="🤖"):
+            with st.spinner("Thinking..."):
+                try:
+                    result = st.session_state.qa_chain.invoke({
+                        "input": prompt,
+                        "chat_history": st.session_state.chat_history,
+                    })
+                    answer = result.get("answer", "No answer returned.")
+                    sources = format_sources(result.get("context", []))
+
+                    st.markdown(answer)
+
+                    if sources:
+                        with st.expander(f"📚 Sources ({len(sources)} passages)", expanded=False):
+                            for src in sources:
+                                page_label = f"Page {src['page']}" if isinstance(src["page"], int) else "Unknown page"
+                                st.markdown(
+                                    f'<div class="source-card">'
+                                    f'<div class="page-badge">{page_label}</div><br>'
+                                    f'{html.escape(src["excerpt"])}'
+                                    f'</div>',
+                                    unsafe_allow_html=True,
+                                )
+
+                    st.session_state.chat_history.append(HumanMessage(content=prompt))
+                    st.session_state.chat_history.append(AIMessage(content=answer))
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": answer,
+                        "sources": sources,
+                    })
+
+                except Exception as e:
+                    err_msg = f"❌ Error: {e}"
+                    st.error(err_msg)
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": err_msg,
+                        "sources": [],
+                    })
