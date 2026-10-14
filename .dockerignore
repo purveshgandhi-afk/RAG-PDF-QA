@@ -1,0 +1,11 @@
+﻿.env
+.env.*
+!.env.example
+.git
+.gitignore
+ai_agent_env/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/

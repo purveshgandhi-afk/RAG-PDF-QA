@@ -1,0 +1,26 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-pdf-qa
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-pdf-qa
+  template:
+    metadata:
+      labels:
+        app: rag-pdf-qa
+    spec:
+      containers:
+        - name: rag-pdf-qa
+          image: YOUR_DOCKERHUB_USERNAME/rag-pdf-qa:latest
+          ports:
+            - containerPort: 8501
+          env:
+            - name: GOOGLE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rag-pdf-qa-secrets
+                  key: GOOGLE_API_KEY
+---
