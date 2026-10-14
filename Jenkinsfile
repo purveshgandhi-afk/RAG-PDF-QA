@@ -2,8 +2,7 @@
     agent any
 
     environment {
-        IMAGE_NAME = "rag-pdf-qa"
-        DOCKERHUB_CREDENTIALS = "dockerhub-credentials"
+        IMAGE_NAME = "purveshgandhii/rag-pdf-qa"
     }
 
     stages {
@@ -26,20 +25,34 @@
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} .'
-                sh 'docker tag ${IMAGE_NAME}:${BUILD_NUMBER} ${IMAGE_NAME}:latest'
+                sh '''
+                    docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} .
+                    docker tag ${IMAGE_NAME}:${BUILD_NUMBER} ${IMAGE_NAME}:latest
+                '''
             }
         }
 
         stage('Push Image') {
             steps {
-                echo 'Registry push will be configured after Docker Hub credentials are added.'
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials',
+                    usernameVariable: 'DOCKERHUB_USER',
+                    passwordVariable: 'DOCKERHUB_TOKEN'
+                )]) {
+                    sh '''
+                        echo "$DOCKERHUB_TOKEN" | docker login \
+                            --username "$DOCKERHUB_USER" --password-stdin
+                        docker push ${IMAGE_NAME}:${BUILD_NUMBER}
+                        docker push ${IMAGE_NAME}:latest
+                        docker logout
+                    '''
+                }
             }
         }
 
-        stage('Deploy to Kubernetes') {
+        stage('Kubernetes Deployment') {
             steps {
-                echo 'Kubernetes deployment will be configured after Minikube is ready.'
+                echo 'Deployment stage will be configured after Minikube setup.'
             }
         }
     }
