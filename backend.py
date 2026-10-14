@@ -8,7 +8,7 @@ Components:
   - Vector store        : FAISS in-memory -- nothing written to disk
   - Retrieval           : MMR (Maximum Marginal Relevance) for diverse results
   - Conversation memory : create_history_aware_retriever (reformulates follow-ups)
-  - LLM                 : Gemini (grounded, cites page numbers)
+  - LLM                 : Groq (llama-3.3-70b-versatile, free tier, ultra-fast)
   - Chain               : create_retrieval_chain (returns answer + source docs)
 """
 
@@ -22,7 +22,7 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 try:
     from langchain.chains import (
         create_retrieval_chain,
@@ -37,7 +37,7 @@ except ImportError:
     from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-load_dotenv()
+load_dotenv(override=True)
 
 # -- Constants -----------------------------------------------------------------
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -58,24 +58,27 @@ def _get_embeddings():
 
 def _get_llm():
     """
-    Initialize Gemini LLM.
-    Accepts both traditional AIza... and new AQ... Google API keys.
-    Defaults to gemini-3.8-flash, configurable via GEMINI_MODEL.
+    Initialize Groq LLM.
+    Defaults to llama-3.3-70b-versatile, configurable via GROQ_MODEL env var.
+    Get a free API key at https://console.groq.com
     """
-    api_key = os.getenv("GOOGLE_API_KEY")
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise RuntimeError(
-            "GOOGLE_API_KEY not found. "
-            "Please add your GOOGLE_API_KEY in the .env file."
+            "GROQ_API_KEY not found. "
+            "Please add your GROQ_API_KEY in the .env file. "
+            "Get a free key at https://console.groq.com"
         )
 
-    model_name = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+    model_name = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 
-    return ChatGoogleGenerativeAI(
+    return ChatGroq(
         model=model_name,
+        api_key=api_key,
         temperature=0,
-        google_api_key=api_key,
-        max_output_tokens=2048,
+        max_tokens=2048,
+        timeout=30.0,
+        max_retries=1,
     )
 
 

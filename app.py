@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 from backend import setup_qa_system
 
-load_dotenv()
+load_dotenv(override=True)
 
 # -- Config --------------------------------------------------------------------
 MAX_FILE_SIZE_MB = 50
@@ -213,7 +213,7 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("---")
-    active_model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+    active_model = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
     st.markdown(
         f"<div style='font-size:0.75rem;color:#94a3b8;text-align:center'>"
         f"Embeddings: local all-MiniLM-L6-v2<br>LLM: {active_model}"
