@@ -1,10 +1,14 @@
+import os
 import re
 import uuid
 import html
+from dotenv import load_dotenv
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage
 
-from backend import setup_qa_system, clear_session_index, clear_old_indices
+from backend import setup_qa_system
+
+load_dotenv()
 
 # -- Config --------------------------------------------------------------------
 MAX_FILE_SIZE_MB = 50
@@ -126,6 +130,7 @@ defaults = {
     "messages": [],             # display history: [{role, content, sources}]
     "chat_history": [],         # LangChain memory: [HumanMessage, AIMessage, ...]
     "chunk_count": 0,
+    "uploader_key": 0,
 }
 for key, val in defaults.items():
     if key not in st.session_state:
@@ -141,6 +146,7 @@ with st.sidebar:
         "Upload a PDF",
         type=["pdf"],
         help="Max 50 MB. Text-based PDFs only.",
+        key=f"pdf_uploader_{st.session_state.uploader_key}",
     )
 
     if uploaded_file:
@@ -203,13 +209,15 @@ with st.sidebar:
         st.session_state.messages = []
         st.session_state.chat_history = []
         st.session_state.chunk_count = 0
+        st.session_state.uploader_key += 1
         st.rerun()
 
     st.markdown("---")
+    active_model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
     st.markdown(
-        "<div style='font-size:0.75rem;color:#94a3b8;text-align:center'>"
-        "Embeddings: local all-MiniLM-L6-v2<br>LLM: Gemini 2.5 Pro"
-        "</div>",
+        f"<div style='font-size:0.75rem;color:#94a3b8;text-align:center'>"
+        f"Embeddings: local all-MiniLM-L6-v2<br>LLM: {active_model}"
+        f"</div>",
         unsafe_allow_html=True,
     )
 

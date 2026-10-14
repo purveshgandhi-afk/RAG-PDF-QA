@@ -1,0 +1,22 @@
+# Environment variables
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Environments
+venv/
+ai_agent_env/
+.venv/
+env/
+ENV/
+
+# Project temporary storage
+faiss_index/
+uploads/
+*.tmp

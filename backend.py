@@ -14,6 +14,7 @@ Components:
 
 import os
 import tempfile
+import functools
 
 from dotenv import load_dotenv
 
@@ -22,11 +23,18 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_classic.chains import (
-    create_retrieval_chain,
-    create_history_aware_retriever,
-)
-from langchain_classic.chains.combine_documents import create_stuff_documents_chain
+try:
+    from langchain.chains import (
+        create_retrieval_chain,
+        create_history_aware_retriever,
+    )
+    from langchain.chains.combine_documents import create_stuff_documents_chain
+except ImportError:
+    from langchain_classic.chains import (
+        create_retrieval_chain,
+        create_history_aware_retriever,
+    )
+    from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 load_dotenv()
@@ -38,8 +46,9 @@ MIN_CHUNK_LENGTH = 50  # chars -- below this a chunk carries no meaning
 
 # -- Private helpers -----------------------------------------------------------
 
+@functools.lru_cache(maxsize=1)
 def _get_embeddings():
-    """Load local HuggingFace embedding model. Downloaded once, then cached."""
+    """Load local HuggingFace embedding model. Downloaded once, then cached in memory."""
     return HuggingFaceEmbeddings(
         model_name=EMBEDDING_MODEL,
         model_kwargs={"device": "cpu"},
@@ -51,6 +60,7 @@ def _get_llm():
     """
     Initialize Gemini LLM.
     Accepts both traditional AIza... and new AQ... Google API keys.
+    Defaults to gemini-3.8-flash, configurable via GEMINI_MODEL.
     """
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
@@ -59,11 +69,13 @@ def _get_llm():
             "Please add your GOOGLE_API_KEY in the .env file."
         )
 
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+
     return ChatGoogleGenerativeAI(
-        model="gemini-3.6-flash",
+        model=model_name,
         temperature=0,
         google_api_key=api_key,
-        max_output_tokens=2048
+        max_output_tokens=2048,
     )
 
 
@@ -84,7 +96,10 @@ def _build_index_from_bytes(pdf_bytes: bytes, embeddings):
         docs = loader.load()
     finally:
         if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
 
     if not docs:
         raise ValueError(
