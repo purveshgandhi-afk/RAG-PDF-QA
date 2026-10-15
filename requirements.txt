@@ -1,16 +1,13 @@
+
 # Core Web UI
 streamlit>=1.35.0
-
-# Environment Configuration
 python-dotenv>=1.0.0
 
-# Document Parsing & Processing
+# Document Parsing
 pypdf>=4.0.0
 
-# Vector Database & Embeddings
-faiss-cpu>=1.8.0
-sentence-transformers>=3.0.0
-torchvision
+# CPU-only PyTorch is installed separately in Dockerfile
+torch==2.7.1
 
 # LangChain Framework & Extensions
 langchain>=0.3.0
