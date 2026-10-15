@@ -8,9 +8,6 @@ ENV PYTHONUNBUFFERED=1
 
 COPY requirements.txt .
 
-# Install CPU-only PyTorch first to avoid large CUDA dependencies
-RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch==2.7.1"
-
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py backend.py ./

@@ -1,4 +1,4 @@
-﻿apiVersion: apps/v1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: rag-pdf-qa
@@ -14,13 +14,14 @@ spec:
     spec:
       containers:
         - name: rag-pdf-qa
-          image: YOUR_DOCKERHUB_USERNAME/rag-pdf-qa:latest
+          image: purveshgandhii/rag-pdf-qa:8
           ports:
             - containerPort: 8501
           env:
-            - name: GOOGLE_API_KEY
+            - name: GROQ_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: rag-pdf-qa-secrets
-                  key: GOOGLE_API_KEY
+                  key: GROQ_API_KEY
 ---
+
