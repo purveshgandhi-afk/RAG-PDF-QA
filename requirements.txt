@@ -3,9 +3,10 @@ streamlit>=1.35.0
 python-dotenv>=1.0.0
 pypdf>=4.0.0
 
-# Vector search and lightweight embeddings
+# Vector search and embeddings (local, no API cost)
 faiss-cpu
-fastembed
+sentence-transformers
+langchain-huggingface
 
 # LangChain
 langchain>=0.3.0

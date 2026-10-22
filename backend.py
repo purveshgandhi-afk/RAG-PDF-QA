@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import FastEmbedEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 try:
     from langchain.chains import (
@@ -48,8 +48,8 @@ MIN_CHUNK_LENGTH = 50  # chars -- below this a chunk carries no meaning
 
 @functools.lru_cache(maxsize=1)
 def _get_embeddings():
-    """Load FastEmbed embedding model. Downloaded once, then cached in memory."""
-    return FastEmbedEmbeddings(
+    """Load HuggingFace embedding model (local, no API cost). Downloaded once, then cached."""
+    return HuggingFaceEmbeddings(
         model_name=EMBEDDING_MODEL,
     )
 
