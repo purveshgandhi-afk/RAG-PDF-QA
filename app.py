@@ -139,7 +139,7 @@ for key, val in defaults.items():
 
 # -- Sidebar -------------------------------------------------------------------
 with st.sidebar:
-    st.markdown("### 📄 PDF Q&A with grok)
+    st.markdown("### 📄 PDF Q&A with grok")
     st.markdown("---")
 
     uploaded_file = st.file_uploader(
